@@ -1,40 +1,70 @@
-#define PIN_2 2
-#define PIN_3 3
-#define PIN_4 4
-#define PIN_5 5
-#define PIN_6 6
-#define PIN_7 7
-#define PIN_8 8
-#define PIN_9 9
-#define PIN_10 10
+#include "DFRobotDFPlayerMini.h"
+#include <SoftwareSerial.h>
 
-typedef enum {
-  RUNNING,
-  STOPPED,
-} TIMER_MODES;
+#define CASHOUT_AUDIO 1
+#define STEALING_CASHOUT_AUDIO 2
+#define IR_SENSOR_OUT A5
 
-unsigned int pin_2_button_state = 0;
-unsigned int pin_3_button_state = 0;
-unsigned int pin_4_button_state = 0;
+int currently_playing = 0;
+int alarm_on = 1;
+int stealing = 0;
+unsigned long int started_stealing = 0;
+const unsigned long int TIME_TO_STEAL = 7500;
 
-unsigned int timer = 0; //timer in minutes
+SoftwareSerial soft_serial(10, 11); // RX, TX
+DFRobotDFPlayerMini player;
+
+void play_cashout_audio(){
+  player.stop();
+  player.loop(CASHOUT_AUDIO);
+  currently_playing = CASHOUT_AUDIO;
+}
+
+void play_stealing_audio(){
+  player.stop(); player.play(STEALING_CASHOUT_AUDIO);
+  currently_playing = STEALING_CASHOUT_AUDIO;
+}
+
+void stop_alarm(){
+  player.stop();
+  alarm_on = 0;
+  stealing = 0;
+}
 
 void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(PIN_2, INPUT_PULLUP);
-  pinMode(PIN_3, INPUT_PULLUP);
-  pinMode(PIN_4, INPUT_PULLUP);
-  pinMode(PIN_7, OUTPUT);
-  pinMode(PIN_8, OUTPUT);
-  pinMode(PIN_9, OUTPUT);
-  pinMode(PIN_10, OUTPUT);
+  soft_serial.begin(9600);
+  Serial.begin(115200);
+  pinMode(IR_SENSOR_OUT, INPUT);
+
+  if (!player.begin(soft_serial)) {
+    Serial.println("DFPlayer Mini not detected!");
+    while (true);
+  }
+
+  player.volume(20);
+  play_cashout_audio();
 }
 
 void loop() {
-  pin_2_button_state = digitalRead(PIN_2);
-  pin_3_button_state = digitalRead(PIN_3);
-  pin_4_button_state = digitalRead(PIN_4);
-  digitalWrite(PIN_8, !pin_2_button_state);
-  digitalWrite(PIN_9, !pin_3_button_state);
-  digitalWrite(PIN_10,!pin_4_button_state);
+  int sensor_state = digitalRead(IR_SENSOR_OUT);
+  if (stealing){
+    unsigned long int current = millis();
+    if (current - started_stealing >= TIME_TO_STEAL){
+      stop_alarm();
+    }
+  }
+  if( alarm_on ){
+    if (currently_playing == CASHOUT_AUDIO){
+      if (sensor_state == 0){
+        started_stealing = millis();
+        stealing = 1;
+        play_stealing_audio();
+      }
+    } else{
+      if (sensor_state == 1){
+        stealing = 0;
+        play_cashout_audio();
+      }
+    }
+  }
 }
